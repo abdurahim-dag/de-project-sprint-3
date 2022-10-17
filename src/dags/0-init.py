@@ -8,7 +8,7 @@ import time
 import pandas as pd
 import requests
 
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from airflow import DAG
 from airflow.operators.dummy_operator import DummyOperator
@@ -20,6 +20,7 @@ from airflow.hooks.http_hook import HttpHook
 from airflow.utils.task_group import TaskGroup
 
 from utils import simple_retry
+from airflow.models import Variable
 
 POSTGRES_CONN_ID = '1_postgresql'
 API_CONN_ID = '1_api'
@@ -39,7 +40,6 @@ headers = {
 }
 
 s3_url = 'https://storage.yandexcloud.net/s3-sprint3/cohort_{COHORT}/{NICKNAME}/project/{REPORT_ID}/{FILE_NAME}'
-s3_url_inc = s3_url.replace('{REPORT_ID}', '{INCREMENT_ID}')
 
 business_dt = '{{ ds }}'
 date_last_success = '{{ prev_start_date_success }}'
@@ -49,7 +49,6 @@ args = {
     'email': ['ragimatamov@yandex.ru'],
     'email_on_failure': False,
     'email_on_retry': False,
-    'retries': 0,
 }
 
 def generate_report(ti: TaskInstance, header: dict, endpoint: str) -> None:
@@ -64,7 +63,7 @@ def generate_report(ti: TaskInstance, header: dict, endpoint: str) -> None:
 
     url = 'https://{0}/generate_report'.format(endpoint)
     response = simple_retry(
-        requests.get,
+        requests.post,
         {
             'url': url,
             'headers': header,
@@ -76,7 +75,7 @@ def generate_report(ti: TaskInstance, header: dict, endpoint: str) -> None:
     ti.xcom_push(key='task_id', value=response_dict['task_id'])
 
 
-def get_report(ti: TaskInstance, start_at: datetime.date, header: dict, endpoint: str) -> None:
+def get_report(ti: TaskInstance, header: dict, endpoint: str) -> None:
     """Получение id отчёта после того, как он будет сформирован на сервере.
 
     Args:
@@ -115,11 +114,12 @@ def get_report(ti: TaskInstance, start_at: datetime.date, header: dict, endpoint
     if not report_id:
         raise TimeoutError()
 
+    Variable.set('report_id', report_id)
     ti.xcom_push(key='report_id', value=report_id)
 
 
 def upload_report(ti: TaskInstance, header: dict, pg_table: str,
-                  file_name: str, start_at: datetime.date,
+                  file_name: str, start_at: str,
                   s3_file_url: str) -> None:
     """
     Функция обрабатывает два случая: первичный отчёт и инкремент.
@@ -133,19 +133,17 @@ def upload_report(ti: TaskInstance, header: dict, pg_table: str,
         s3_file_url: URL до файла.
     """
     # Проверка на тип загружаемых данных
-    if 'INCREMENT_ID' in s3_file_url:
-        report_ids = ti.xcom_pull(key='increment_id', task_ids=['t_get_increment'])
-    else:
-        report_ids = ti.xcom_pull(key='report_id', task_ids=['t_check_report'])
+    report_ids = ti.xcom_pull(key='report_id', task_ids=['t_get_report'])
     report_id = report_ids[0]
 
     s3_file_url = s3_file_url.replace('{REPORT_ID}', report_id)
-    s3_file_url = s3_file_url.replace('{COHORT_NUMBER}', header['X-Cohort'])
+    s3_file_url = s3_file_url.replace('{COHORT}', header['X-Cohort'])
     s3_file_url = s3_file_url.replace('{NICKNAME}', header['X-Nickname'])
     s3_file_url = s3_file_url.replace('{FILE_NAME}', file_name)
 
     local_file_name = start_at.replace('-', '') + '_' + file_name
 
+    logging.info(f"Load file from {s3_file_url}")
     response = simple_retry(
         requests.get, {'url': s3_file_url},
     )
@@ -185,47 +183,51 @@ with DAG(
     'init_report',
     default_args=args,
     description='Initialize report dag',
-    catchup=True,
     start_date=datetime.today(),
-    schedule_interval='',
+    schedule_interval='@once',
 ) as dag:
     start = DummyOperator(task_id='start')
     end = DummyOperator(task_id='end')
-    with TaskGroup('group_update_table') as group_update_table:
+    with TaskGroup('group_update_tables') as group_update_tables:
         update_d_item_table = PostgresOperator(
             task_id='update_d_item',
             postgres_conn_id=POSTGRES_CONN_ID,
-            sql='sql0/mart.d_item.sql0',
+            sql='sql/mart.d_item.sql',
         )
         update_d_customer_table = PostgresOperator(
             task_id='update_d_customer',
             postgres_conn_id=POSTGRES_CONN_ID,
-            sql='sql0/mart.d_customer.sql0',
+            sql='sql/mart.d_customer.sql',
         )
         update_d_city_table = PostgresOperator(
             task_id='update_d_city',
             postgres_conn_id=POSTGRES_CONN_ID,
-            sql='sql0/mart.d_city.sql0',
+            sql='sql/mart.d_city.sql',
+        )
+        update_d_calendar = PostgresOperator(
+            task_id='update_d_calendar',
+            postgres_conn_id=POSTGRES_CONN_ID,
+            sql='sql/mart.d_calendar.sql',
         )
         update_f_sales = PostgresOperator(
             task_id='update_f_sales',
             postgres_conn_id=POSTGRES_CONN_ID,
-            sql='sql0/mart.f_sales.sql0',
+            sql='sql/mart.f_sales.sql',
             parameters={'date': {business_dt}},
         )
 
-        update_d_item_table >> update_d_customer_table >> update_d_city_table >> update_f_sales
+        [update_d_item_table, update_d_customer_table, update_d_city_table, update_d_calendar] >> update_f_sales
 
     t_generate_report = PythonOperator(
         task_id='t_generate_report',
         python_callable=generate_report,
-        op_kwargs={'header': headers, 'api_endpoint': api_endpoint},
+        op_kwargs={'header': headers, 'endpoint': api_endpoint},
         provide_context=True,
     )
     t_get_report = PythonOperator(
         task_id='t_get_report',
         python_callable=get_report,
-        op_kwargs={'header': headers, 'api_endpoint': api_endpoint},
+        op_kwargs={'header': headers, 'endpoint': api_endpoint},
         provide_context=True,
     )
     t_load_customer_research = PythonOperator(
@@ -233,7 +235,7 @@ with DAG(
         python_callable=upload_report,
         op_kwargs={
            'file_name': 'customer_research.csv',
-           'pg_table': 'stage.customer_research',
+           'pg_table': 'staging.customer_research',
            'header': headers,
            'start_at': business_dt,
            's3_file_url': s3_url,
@@ -245,7 +247,7 @@ with DAG(
         python_callable=upload_report,
         op_kwargs={
            'file_name': 'user_activity_log.csv',
-           'pg_table': 'stage.user_activity_log',
+           'pg_table': 'staging.user_activity_log',
            'header': headers,
            'start_at': business_dt,
            's3_file_url': s3_url,
@@ -257,7 +259,7 @@ with DAG(
         python_callable=upload_report,
         op_kwargs={
             'file_name': 'user_orders_log.csv',
-            'pg_table': 'stage.user_order_log',
+            'pg_table': 'staging.user_order_log',
             'header': headers,
             'start_at': business_dt,
             's3_file_url': s3_url,
@@ -265,5 +267,5 @@ with DAG(
         provide_context=True,
     )
 
-    start >> t_generate_report >> t_get_report >> t_load_customer_research >> t_load_user_activity_log >> \
-        t_load_user_order_log >> group_update_table >> end
+    start >> t_generate_report >> t_get_report >> \
+        [t_load_customer_research, t_load_user_activity_log, t_load_user_order_log] >> group_update_tables >> end

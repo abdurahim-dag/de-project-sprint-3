@@ -1,12 +1,13 @@
 create table mart.d_calendar
 (
-    date_id    integer not null
+    date_id      integer not null
         primary key,
-    fact_date  date,
-    day_num    integer,
-    month_num  integer,
-    month_name varchar(8),
-    year_num   integer
+    date_actual  date,
+    day_of_month integer,
+    month_actual integer,
+    month_name   varchar(50),
+    year_actual  integer,
+    "week"  integer
 );
 
 create index d_calendar1
