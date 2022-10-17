@@ -156,22 +156,22 @@ with DAG(
     update_d_item_table = PostgresOperator(
         task_id='update_d_item',
         postgres_conn_id=postgres_conn_id,
-        sql="sql/mart.d_item.sql")
+        sql="sql0/production.d_item.sql0")
 
     update_d_customer_table = PostgresOperator(
         task_id='update_d_customer',
         postgres_conn_id=postgres_conn_id,
-        sql="sql/mart.d_customer.sql")
+        sql="sql0/production.d_customer.sql0")
 
     update_d_city_table = PostgresOperator(
         task_id='update_d_city',
         postgres_conn_id=postgres_conn_id,
-        sql="sql/mart.d_city.sql")
+        sql="sql0/production.d_city.sql0")
 
     update_f_sales = PostgresOperator(
         task_id='update_f_sales',
         postgres_conn_id=postgres_conn_id,
-        sql="sql/mart.f_sales.sql",
+        sql="sql0/production.f_sales.sql0",
         parameters={"date": {business_dt}}
     )
 
