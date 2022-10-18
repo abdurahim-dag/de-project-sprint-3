@@ -22,5 +22,5 @@ select
      ,extract(month from a.date_time) as month_actual
      ,TO_CHAR(a.date_time, 'Month') as month_name
      ,extract(year from a.date_time) as year_actual
-     ,to_char(current_date, 'W')::integer as "week"
+     ,extract('day' from date_trunc('week', a.date_time) - date_trunc('week', date_trunc('month', a.date_time))) / 7 + 1 as "week"
 from all_dates_new a;

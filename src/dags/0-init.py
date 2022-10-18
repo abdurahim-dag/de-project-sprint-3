@@ -153,11 +153,6 @@ def upload_report(ti: TaskInstance, header: dict, pg_table: str,
     df = pd.read_csv(local_file_name)
     cols = ','.join(list(df.columns))
 
-    # insert to database
-    # psql_conn = BaseHook.get_connection(POSTGRES_CONN_ID)
-    # conn = psycopg2.connect(f"dbname='{psql_conn.schema}' port='{psql_conn.port}' user='{psql_conn.login}' host='{psql_conn.host}' password='{psql_conn.password}'")
-    # cur = conn.cursor()
-
     pg_hook = PostgresHook(postgres_conn_id=POSTGRES_CONN_ID)
 
     with pg_hook.get_conn() as conn:
@@ -165,18 +160,19 @@ def upload_report(ti: TaskInstance, header: dict, pg_table: str,
             cur.execute(f"truncate {pg_table};")
             conn.commit()
 
-            insert_cr = f"INSERT INTO {pg_table} ({cols}) VALUES " + "{cr_val};"
-            i = 0
-            step = int(df.shape[0] / 100)
-            logging.info(f"{pg_table}, step-{step}")
-            while i <= df.shape[0]:
+            if df.shape[0] > 0:
+                insert_cr = f"INSERT INTO {pg_table} ({cols}) VALUES " + "{cr_val};"
+                i = 0
+                step = int(df.shape[0] / 100)
+                logging.info(f"{pg_table}, step-{step}")
+                while i <= df.shape[0]:
 
-                cr_val = str([tuple(x) for x in df.loc[i:i + step].to_numpy()])[1:-1]
-                cur.execute(insert_cr.replace('{cr_val}', cr_val))
+                    cr_val = str([tuple(x) for x in df.loc[i:i + step].to_numpy()])[1:-1]
+                    cur.execute(insert_cr.replace('{cr_val}', cr_val))
 
-                conn.commit()
+                    conn.commit()
 
-                i += step + 1
+                    i += step + 1
 
 # DAG#
 with DAG(

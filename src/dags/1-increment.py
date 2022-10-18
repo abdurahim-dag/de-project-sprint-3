@@ -18,7 +18,7 @@ from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.hooks.http_hook import HttpHook
 from airflow.utils.task_group import TaskGroup
 from airflow.models import Variable
-from airflow.exceptions import AirflowSkipException
+from airflow.exceptions import AirflowFailException
 
 from utils import simple_retry
 
@@ -87,19 +87,14 @@ def upload_report(ti: TaskInstance, header: dict, pg_table: str,
     df = pd.read_csv(local_file_name)
     cols = ','.join(list(df.columns))
 
-    # insert to database
-    # psql_conn = BaseHook.get_connection(POSTGRES_CONN_ID)
-    # conn = psycopg2.connect(f"dbname='{psql_conn.schema}' port='{psql_conn.port}' user='{psql_conn.login}' host='{psql_conn.host}' password='{psql_conn.password}'")
-    # cur = conn.cursor()
-
     pg_hook = PostgresHook(postgres_conn_id=POSTGRES_CONN_ID)
 
-    if df.shape[0] > 0:
-        with pg_hook.get_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(f"truncate {pg_table};")
-                conn.commit()
+    with pg_hook.get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(f"truncate {pg_table};")
+            conn.commit()
 
+            if df.shape[0] > 0:
                 insert_cr = f"INSERT INTO {pg_table} ({cols}) VALUES " + "{cr_val};"
                 i = 0
                 step = int(df.shape[0] / 100)
@@ -128,8 +123,7 @@ def get_increment(start_at: str, ti: TaskInstance, header: dict, endpoint: str) 
     Returns:
         str: Выбрираем группу задач инкремента или идём дальше.
     """
-    start_at = datetime.strptime(start_at,'%Y-%m-%d')  - timedelta(days=1)
-    start_at = datetime.strftime(start_at, '%Y-%m-%d')
+    start_at = start_at
     logging.info('Making request get_increment')
     report_id = Variable.get('report_id')
 
@@ -147,7 +141,7 @@ def get_increment(start_at: str, ti: TaskInstance, header: dict, endpoint: str) 
     status = response_content['status']
     if status == 'NOT FOUND':
         logging.info(f"Skip. {response_content}")
-        raise AirflowSkipException
+        raise AirflowFailException
 
 
     response.raise_for_status()
@@ -163,11 +157,13 @@ def get_increment(start_at: str, ti: TaskInstance, header: dict, endpoint: str) 
 
 # DAG#
 with DAG(
-        'increment-report',
-        default_args=args,
-        description='Provide default dag for sprint3',
-        start_date=datetime.today(),
-        schedule_interval='@daily',
+    'increment-report-loading0',
+    default_args=args,
+    description='Задача',
+    start_date=datetime.today() - timedelta(days=8),
+    catchup=True,
+    max_active_runs=1,
+    schedule_interval='@daily',
 ) as dag:
     with TaskGroup('group_update_tables') as group_update_tables:
         update_d_item_table = PostgresOperator(
