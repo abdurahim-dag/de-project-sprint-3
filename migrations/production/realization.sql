@@ -10,7 +10,7 @@ create table mart.d_calendar
     "week"  integer
 );
 
-create index d_calendar1
+create index d_calendar
     on mart.d_calendar (date_id);
 
 create table mart.d_city

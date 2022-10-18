@@ -157,7 +157,7 @@ def get_increment(start_at: str, ti: TaskInstance, header: dict, endpoint: str) 
 
 # DAG#
 with DAG(
-    'increment-report-loading0',
+    'increment-report-load',
     default_args=args,
     description='Задача',
     start_date=datetime.today() - timedelta(days=8),
