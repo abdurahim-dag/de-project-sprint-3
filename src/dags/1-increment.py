@@ -151,10 +151,6 @@ def get_increment(start_at: str, ti: TaskInstance, header: dict, endpoint: str) 
     ti.xcom_push(key='increment_id', value=increment_id)
     logging.info(f"increment_id={increment_id}")
 
-
-
-# TODO check transaction
-
 # DAG#
 with DAG(
     'increment-report-load',
@@ -166,35 +162,23 @@ with DAG(
     schedule_interval='@daily',
 ) as dag:
     with TaskGroup('group_update_tables') as group_update_tables:
-        update_d_item_table = PostgresOperator(
-            task_id='update_d_item',
-            postgres_conn_id=POSTGRES_CONN_ID,
-            sql='sql/mart.d_item.sql',
-        )
-        update_d_customer_table = PostgresOperator(
-            task_id='update_d_customer',
-            postgres_conn_id=POSTGRES_CONN_ID,
-            sql='sql/mart.d_customer.sql',
-        )
-        update_d_city_table = PostgresOperator(
-            task_id='update_d_city',
-            postgres_conn_id=POSTGRES_CONN_ID,
-            sql='sql/mart.d_city.sql',
-        )
-        update_d_calendar = PostgresOperator(
-            task_id='update_d_calendar',
-            postgres_conn_id=POSTGRES_CONN_ID,
-            sql='sql/mart.d_calendar.sql',
-        )
-
+        dimension_tasks = list()
+        for i in ['d_city', 'd_item', 'd_customer', 'update_d_calendar', ]:
+            dimension_tasks.append(PostgresOperator(
+                task_id=f'load_{i}',
+                postgres_conn_id=POSTGRES_CONN_ID,
+                sql=f'sql/mart.{i}.sql',
+                dag=dag
+            )
+            )
         update_f_sales_incr = PostgresOperator(
             task_id='update_f_sales_incr',
             postgres_conn_id=POSTGRES_CONN_ID,
             sql='sql/mart.f_sales_incr.sql',
             parameters={'date': {business_dt}},
         )
-
-        [update_d_item_table, update_d_customer_table, update_d_city_table, update_d_calendar] >> update_f_sales_incr
+        dimension_tasks >> update_f_sales_incr
+        dimension_tasks = list()
 
     with TaskGroup('group_load_data') as group_load_data:
         load_customer_research_inc = PythonOperator(
