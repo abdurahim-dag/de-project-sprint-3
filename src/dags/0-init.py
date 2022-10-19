@@ -176,7 +176,7 @@ def upload_report(ti: TaskInstance, header: dict, pg_table: str,
 
 # DAG#
 with DAG(
-    'init-report-load-2',
+    'init-report-load',
     default_args=args,
     description='Initialize report dag',
     start_date=datetime.today(),
