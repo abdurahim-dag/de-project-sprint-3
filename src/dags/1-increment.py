@@ -163,7 +163,7 @@ with DAG(
 ) as dag:
     with TaskGroup('group_update_tables') as group_update_tables:
         dimension_tasks = list()
-        for i in ['d_city', 'd_item', 'd_customer', 'update_d_calendar', ]:
+        for i in ['d_city', 'd_item', 'd_customer', 'd_calendar', ]:
             dimension_tasks.append(PostgresOperator(
                 task_id=f'update_{i}',
                 postgres_conn_id=POSTGRES_CONN_ID,
