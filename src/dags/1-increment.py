@@ -153,7 +153,7 @@ def get_increment(start_at: str, ti: TaskInstance, header: dict, endpoint: str) 
 
 # DAG#
 with DAG(
-    'increment-report-load',
+    'increment-report-load-2',
     default_args=args,
     description='Задача',
     start_date=datetime.today() - timedelta(days=8),
@@ -165,7 +165,7 @@ with DAG(
         dimension_tasks = list()
         for i in ['d_city', 'd_item', 'd_customer', 'update_d_calendar', ]:
             dimension_tasks.append(PostgresOperator(
-                task_id=f'load_{i}',
+                task_id=f'update_{i}',
                 postgres_conn_id=POSTGRES_CONN_ID,
                 sql=f'sql/mart.{i}.sql',
                 dag=dag

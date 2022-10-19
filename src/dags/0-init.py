@@ -22,8 +22,8 @@ from airflow.utils.task_group import TaskGroup
 from utils import simple_retry
 from airflow.models import Variable
 
-POSTGRES_CONN_ID = '1_postgresql'
-API_CONN_ID = '1_api'
+POSTGRES_CONN_ID='1_postgresql'
+API_CONN_ID='1_api'
 
 http_conn = HttpHook.get_connection(API_CONN_ID)
 api_endpoint = http_conn.host
@@ -176,7 +176,7 @@ def upload_report(ti: TaskInstance, header: dict, pg_table: str,
 
 # DAG#
 with DAG(
-    'init-report-load',
+    'init-report-load-2',
     default_args=args,
     description='Initialize report dag',
     start_date=datetime.today(),
@@ -188,7 +188,7 @@ with DAG(
         dimension_tasks = list()
         for i in ['d_city', 'd_item', 'd_customer', 'update_d_calendar', ]:
             dimension_tasks.append(PostgresOperator(
-                task_id=f'load_{i}',
+                task_id=f'update_{i}',
                 postgres_conn_id=POSTGRES_CONN_ID,
                 sql=f'sql/mart.{i}.sql',
                 dag=dag
